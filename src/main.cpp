@@ -8,6 +8,14 @@
 #include <iostream>
 #include "Shader.h"
 #include "Camera.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image_write.h>
+#include <string>
+#include <ctime>
+#include <sstream>
+#include <iomanip>
+#include "Scene.h"
+
 
 const unsigned int SCR_WIDTH = 1600;
 const unsigned int SCR_HEIGHT = 1200;
@@ -59,6 +67,15 @@ bool rightPressedLastFrame = false;
 bool tPressedLastFrame = false;
 bool fourPressedLastFrame = false;
 bool eightPressedLastFrame = false;
+#include <sstream>
+#include <iomanip>
+
+#ifdef _WIN32
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#endif
+
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow *window);
@@ -78,10 +95,12 @@ uniform mat4 uProj;
 
 out vec3 FragPos;
 out vec3 Normal;
+out vec3 vWorldPos;
 
 void main() {
     FragPos = vec3(uModel * vec4(aPos, 1.0));
     Normal  = mat3(transpose(inverse(uModel))) * aNormal;
+    vWorldPos = FragPos;
 
     gl_Position = uProj * uView * vec4(FragPos, 1.0);
 })";
@@ -92,10 +111,14 @@ out vec4 FragColor;
 
 in vec3 FragPos;
 in vec3 Normal;
+in vec3 vWorldPos;
 
 uniform vec3 uLightPos;
 uniform vec3 uLightColor;
 uniform vec3 uObjectColor;
+uniform sampler2D uTex;
+uniform int uUseTexture;
+uniform vec2 uTexScale;
 
 void main() {
     vec3 norm = normalize(Normal);
@@ -106,7 +129,18 @@ void main() {
     vec3 ambient = 0.15 * uLightColor;
     vec3 diffuse = diff * uLightColor;
 
-    vec3 result = (ambient + diffuse) * uObjectColor;
+    vec3 baseColor = uObjectColor;
+
+    if (uUseTexture == 1) {
+        // planar projection on XZ (perfect for ground/water)
+        vec2 uv = vWorldPos.xz * uTexScale;
+        vec3 texColor = texture(uTex, uv).rgb;
+
+        // tint the texture a bit using uObjectColor (nice for art-directing)
+        baseColor = texColor * uObjectColor;
+    }
+
+    vec3 result = (ambient + diffuse) * baseColor;
     FragColor = vec4(result, 1.0);
 })";
 
@@ -221,6 +255,40 @@ void main() {
 }
 )";
 
+void takeScreenshot(const std::string& filename, int width, int height)
+{
+    std::vector<unsigned char> pixels(width * height * 3);
+
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+
+    for (int y = 0; y < height / 2; y++) {
+        for (int x = 0; x < width * 3; x++) {
+            std::swap(
+                pixels[y * width * 3 + x],
+                pixels[(height - 1 - y) * width * 3 + x]
+            );
+        }
+    }
+
+    stbi_write_png(filename.c_str(), width, height, 3, pixels.data(), width * 3);
+
+    std::cout << "Screenshot saved: " << filename << "\n";
+}
+
+
+void ensureScreenshotFolderExists()
+{
+#ifdef _WIN32
+    std::string path = std::string(PROJECT_SOURCE_DIR) + "/src/Screenshots";
+    _mkdir(path.c_str());
+#else
+    std::string path = std::string(PROJECT_SOURCE_DIR) + "/src/Screenshots";
+    mkdir(path.c_str(), 0777);
+#endif
+}
+
+
 
 
 void recreateFramebufferAttachments(int width, int height) {
@@ -287,105 +355,12 @@ int main() {
 
     // Compile shaders
     Shader lightingShader(vertexShaderSource, fragmentShaderSource);
-
-    //Example cube vertex data (minimal):
-    float cubeVertices[] = {
-        // positions           // normals
-        // back face
-        -0.5f,-0.5f,-0.5f,  0.0f, 0.0f,-1.0f,
-         0.5f, 0.5f,-0.5f,  0.0f, 0.0f,-1.0f,
-         0.5f,-0.5f,-0.5f,  0.0f, 0.0f,-1.0f,
-         0.5f, 0.5f,-0.5f,  0.0f, 0.0f,-1.0f,
-        -0.5f,-0.5f,-0.5f,  0.0f, 0.0f,-1.0f,
-        -0.5f, 0.5f,-0.5f,  0.0f, 0.0f,-1.0f,
-
-        // front face
-        -0.5f,-0.5f, 0.5f,  0.0f, 0.0f, 1.0f,
-         0.5f,-0.5f, 0.5f,  0.0f, 0.0f, 1.0f,
-         0.5f, 0.5f, 0.5f,  0.0f, 0.0f, 1.0f,
-         0.5f, 0.5f, 0.5f,  0.0f, 0.0f, 1.0f,
-        -0.5f, 0.5f, 0.5f,  0.0f, 0.0f, 1.0f,
-        -0.5f,-0.5f, 0.5f,  0.0f, 0.0f, 1.0f,
-
-        // left face
-        -0.5f, 0.5f, 0.5f, -1.0f, 0.0f, 0.0f,
-        -0.5f, 0.5f,-0.5f, -1.0f, 0.0f, 0.0f,
-        -0.5f,-0.5f,-0.5f, -1.0f, 0.0f, 0.0f,
-        -0.5f,-0.5f,-0.5f, -1.0f, 0.0f, 0.0f,
-        -0.5f,-0.5f, 0.5f, -1.0f, 0.0f, 0.0f,
-        -0.5f, 0.5f, 0.5f, -1.0f, 0.0f, 0.0f,
-
-        // right face
-         0.5f, 0.5f, 0.5f,  1.0f, 0.0f, 0.0f,
-         0.5f,-0.5f,-0.5f,  1.0f, 0.0f, 0.0f,
-         0.5f, 0.5f,-0.5f,  1.0f, 0.0f, 0.0f,
-         0.5f,-0.5f,-0.5f,  1.0f, 0.0f, 0.0f,
-         0.5f, 0.5f, 0.5f,  1.0f, 0.0f, 0.0f,
-         0.5f,-0.5f, 0.5f,  1.0f, 0.0f, 0.0f,
-
-        // bottom face
-        -0.5f,-0.5f,-0.5f,  0.0f,-1.0f, 0.0f,
-         0.5f,-0.5f,-0.5f,  0.0f,-1.0f, 0.0f,
-         0.5f,-0.5f, 0.5f,  0.0f,-1.0f, 0.0f,
-         0.5f,-0.5f, 0.5f,  0.0f,-1.0f, 0.0f,
-        -0.5f,-0.5f, 0.5f,  0.0f,-1.0f, 0.0f,
-        -0.5f,-0.5f,-0.5f,  0.0f,-1.0f, 0.0f,
-
-        // top face
-        -0.5f, 0.5f,-0.5f,  0.0f, 1.0f, 0.0f,
-         0.5f, 0.5f, 0.5f,  0.0f, 1.0f, 0.0f,
-         0.5f, 0.5f,-0.5f,  0.0f, 1.0f, 0.0f,
-         0.5f, 0.5f, 0.5f,  0.0f, 1.0f, 0.0f,
-        -0.5f, 0.5f,-0.5f,  0.0f, 1.0f, 0.0f,
-        -0.5f, 0.5f, 0.5f,  0.0f, 1.0f, 0.0f
-    };
-
-    //This is the floor
-    float planeVertices[] = {
-        // positions            // normals
-        -5.0f, 0.0f, -5.0f,     0.0f, 1.0f, 0.0f,
-         5.0f, 0.0f, -5.0f,     0.0f, 1.0f, 0.0f,
-         5.0f, 0.0f,  5.0f,     0.0f, 1.0f, 0.0f,
-
-         5.0f, 0.0f,  5.0f,     0.0f, 1.0f, 0.0f,
-        -5.0f, 0.0f,  5.0f,     0.0f, 1.0f, 0.0f,
-        -5.0f, 0.0f, -5.0f,     0.0f, 1.0f, 0.0f
-    };
+    ensureScreenshotFolderExists();
+    Scene scene;
+    scene.init();
 
 
-    unsigned int cubeVAO, cubeVBO;
-    glGenVertexArrays(1, &cubeVAO);
-    glGenBuffers(1, &cubeVBO);
 
-    glBindVertexArray(cubeVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, cubeVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(cubeVertices), cubeVertices, GL_STATIC_DRAW);
-
-    // position attribute
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    // normal attribute
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    //
-    //this is for the floor
-    unsigned int planeVAO, planeVBO;
-    glGenVertexArrays(1, &planeVAO);
-    glGenBuffers(1, &planeVBO);
-
-    glBindVertexArray(planeVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, planeVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(planeVertices), planeVertices, GL_STATIC_DRAW);
-
-    // position
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    // normal
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
 
     // ----- Compile post-process shader program -----
     Shader postShader(ppVertexShaderSrc, ppFragmentShaderSrc);
@@ -499,7 +474,7 @@ int main() {
 
         glBindFramebuffer(GL_FRAMEBUFFER, gFBO);
         glEnable(GL_DEPTH_TEST);
-        glClearColor(1,1,1,1);
+        glClearColor(0.55f, 0.75f, 0.95f, 1.0f); // sky blue
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // use your lighting shader and draw floor + cubes (your existing code)
@@ -515,7 +490,6 @@ int main() {
 
         // ----- LIGHT (common to all objects) -----
         glm::vec3 lightPos;
-
         if (lightSnapMode) {
             const float step = glm::two_pi<float>() / (float)lightSnapSteps;
             float ang = (float)lightSnapIndex * step;
@@ -536,54 +510,11 @@ int main() {
                 sin(lightAngle) * lightOrbitRadius
             );
         }
-
+        scene.render(lightingShader, view, proj, lightPos);
         lightingShader.setVec3("uLightPos", lightPos);
         lightingShader.setVec3("uLightColor", glm::vec3(1.0f));
 
-        // =========================================
-        // DRAW FLOOR
-        // =========================================
 
-        glm::mat4 floorModel = glm::mat4(1.0f);
-        lightingShader.setMat4("uModel", floorModel);
-        lightingShader.setVec3("uObjectColor", glm::vec3(0.7f));
-
-        glBindVertexArray(planeVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
-
-        // =========================================
-        // DRAW CUBE
-        // =========================================
-
-        glm::mat4 cubeModel = glm::mat4(1.0f);
-        cubeModel = glm::translate(cubeModel, glm::vec3(0.0f, 0.5f, 0.0f));
-        cubeModel = glm::rotate(cubeModel, (float)glfwGetTime(), glm::vec3(0.0f, 1.0f, 0.0f));
-
-        lightingShader.setMat4("uModel", cubeModel);
-        lightingShader.setVec3("uObjectColor", glm::vec3(0.2f));
-
-        glBindVertexArray(cubeVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-
-        // =========================================
-        // DRAW SECOND OBJECT (another cube)
-        // =========================================
-        glm::mat4 cube2Model = glm::mat4(1.0f);
-
-        // put it somewhere else in the scene
-        cube2Model = glm::translate(cube2Model, glm::vec3(2.0f, 0.5f, -1.0f));
-
-        // make it taller like a simple “tree trunk”
-        cube2Model = glm::scale(cube2Model, glm::vec3(0.5f, 2.0f, 0.5f));
-
-        // (optional) rotate it a bit so it’s not identical
-        cube2Model = glm::rotate(cube2Model, glm::radians(20.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-
-        lightingShader.setMat4("uModel", cube2Model);
-        lightingShader.setVec3("uObjectColor", glm::vec3(0.25f, 0.18f, 0.10f));
-
-        glBindVertexArray(cubeVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
         glBindFramebuffer(GL_FRAMEBUFFER, brightFBO);
         glDisable(GL_DEPTH_TEST);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -687,7 +618,7 @@ int main() {
         glfwPollEvents();
     }
 
-
+    scene.destroy();
     glfwTerminate();
     return 0;
 }
@@ -836,9 +767,22 @@ void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) bloomStrength = std::max(0.0f, bloomStrength - 1.0f * deltaTime);
     if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS) bloomStrength += 1.0f * deltaTime;
 
+    static bool screenshotPressedLastFrame = false;
 
+    bool screenshotPressed = glfwGetKey(window, GLFW_KEY_F12) == GLFW_PRESS;
+    if (screenshotPressed && !screenshotPressedLastFrame)
+    {
+        std::ostringstream ss;
+        ss << PROJECT_SOURCE_DIR
+           << "/src/Screenshots/screenshot_"
+           << std::setw(4) << std::setfill('0')
+           << (int)glfwGetTime()
+           << ".png";
 
+        takeScreenshot(ss.str(), gFbWidth, gFbHeight);
+    }
 
+    screenshotPressedLastFrame = screenshotPressed;
 
 }
 
