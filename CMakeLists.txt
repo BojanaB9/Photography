@@ -52,7 +52,7 @@ file(GLOB PROJECT_CONFIGS CMakeLists.txt
 )
 
 source_group("include" FILES ${PROJECT_HEADERS})
-source_group("shaders" FILES ${PROJECT_SHADERS})
+source_group("res/shaders" FILES ${PROJECT_SHADERS})
 source_group("textures" FILES ${PROJECT_TEXTURES})
 source_group("src" FILES ${PROJECT_SOURCES})
 source_group("vendors" FILES ${VENDORS_SOURCES})
@@ -64,6 +64,15 @@ add_definitions(-DGLFW_INCLUDE_NONE
 add_executable(${PROJECT_NAME} ${PROJECT_SOURCES} ${PROJECT_HEADERS}
   ${PROJECT_SHADERS} ${PROJECT_TEXTURES} ${PROJECT_CONFIGS}
   ${VENDORS_SOURCES}
+        src/camera.cpp
+        src/camera.h
+        src/Shader.cpp
+        src/Shader.h
+        res/shaders/lighting.vert
+        res/shaders/lighting.frag
+        res/shaders/post.vert
+        res/shaders/post.frag
+
 )
 
 target_link_libraries(${PROJECT_NAME}
