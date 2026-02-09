@@ -361,20 +361,20 @@ void Scene::render(Shader& shader,
     // -------------------------
     glm::mat4 ground = glm::mat4(1.0f);
     shader.setMat4("uModel", ground);
-    shader.setVec3("uObjectColor", glm::vec3(0.15f, 0.55f, 0.18f));
+    shader.setVec3("uObjectColor", glm::vec3(0.55f, 0.55f, 0.18f));
 
-    glBindVertexArray(mGroundVAO);
-    glDrawElements(GL_TRIANGLES, mGroundIndexCount, GL_UNSIGNED_INT, 0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, mTexGrass);
-    shader.setVec2("uTexScale", glm::vec2(2.5f));
+    shader.setVec2("uTexScale", glm::vec2(1.5f));
     shader.setInt("uUseTexture", 1);
 
     glBindVertexArray(mGroundVAO);
     glDrawElements(GL_TRIANGLES, mGroundIndexCount, GL_UNSIGNED_INT, 0);
+    shader.setInt("uUseTexture", 0);
+
 
     /// -------------------------
-    // River (curved ribbon)
+    // River 
     // -------------------------
     shader.setMat4("uModel", glm::mat4(1.0f));
     shader.setVec3("uObjectColor", glm::vec3(0.08f, 0.35f, 0.65f));
@@ -386,13 +386,11 @@ void Scene::render(Shader& shader,
 
     glBindVertexArray(mRiverVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, mRiverVertexCount);
+    shader.setInt("uUseTexture", 0);
 
     // -------------------------
-    // A few trees (trunk + foliage)
+    // A few trees
     // -------------------------
-
-
-
 
     auto drawTree = [&](glm::vec3 pos, float trunkH, float crownSize) {
         // trunk
@@ -405,8 +403,9 @@ void Scene::render(Shader& shader,
         trunk = glm::translate(trunk, pos + glm::vec3(0, trunkH * 0.5f, 0));
         trunk = glm::scale(trunk, glm::vec3(0.4f, trunkH, 0.4f));
         drawCube(shader, trunk, glm::vec3(0.35f, 0.22f, 0.12f));
+        shader.setInt("uUseTexture", 0);
 
-        // crown (3 stacked cubes looks surprisingly decent)
+        // crown
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, mTexLeaf);
         shader.setVec2("uTexScale", glm::vec2(1.5f));
@@ -420,16 +419,15 @@ void Scene::render(Shader& shader,
             crown = glm::scale(crown, glm::vec3(s, s, s));
             drawCube(shader, crown, glm::vec3(0.10f, 0.45f, 0.12f));
         }
+        shader.setInt("uUseTexture", 0);
     };
 
-    drawTree(glm::vec3(-3.0f, 0, -4.0f), 2.6f, 1.8f);
-    drawTree(glm::vec3(-1.2f, 0, -5.5f), 3.2f, 2.2f);
-    drawTree(glm::vec3( 1.0f, 0, -4.2f), 2.8f, 2.0f);
+    drawTree(glm::vec3(-5.0f, 0, -4.5f), 2.6f, 1.8f);
+    drawTree(glm::vec3(-1.2f, 0, -5.0f), 3.2f, 2.2f);
+    drawTree(glm::vec3( 1.2f, 0, -1.2f), 2.8f, 2.0f);
     drawTree(glm::vec3( 2.6f, 0, -5.0f), 2.4f, 1.7f);
     drawTree(glm::vec3( 0.5f, 0, -6.8f), 2.9f, 2.0f);
-    drawTree(glm::vec3(-2.2f, 0, -6.3f), 2.5f, 1.8f);
-
-
+    // drawTree(glm::vec3(-2.2f, 0, -6.3f), 2.5f, 1.8f);
 
     // -------------------------
     // Rocks
@@ -438,6 +436,8 @@ void Scene::render(Shader& shader,
     glBindTexture(GL_TEXTURE_2D, mTexRock);
     shader.setVec2("uTexScale", glm::vec2(1.0f));
     shader.setInt("uUseTexture", 1);
+    shader.setVec3("uObjectColor", glm::vec3(4.0f, 4.0f, 4.0f)); // HDR bright
+
 
     auto drawRock = [&](glm::vec3 pos, glm::vec3 scale) {
         glm::mat4 m = glm::mat4(1.0f);
@@ -451,6 +451,7 @@ void Scene::render(Shader& shader,
     drawRock(glm::vec3(-8,0, 2), glm::vec3(1.2f, 0.7f, 1.1f));
 
     glBindVertexArray(0);
+    shader.setInt("uUseTexture", 0);
 }
 
 
