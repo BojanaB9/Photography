@@ -23,8 +23,7 @@ private:
     int mGroundIndexCount = 0;
     unsigned int mRiverVAO = 0;
     unsigned int mRiverVBO = 0;
-    int mRiverVertexCount = 0; // number of vertices in the strip
-    // Scene.h (private:)
+    int mRiverVertexCount = 0; 
     unsigned int mTexGrass = 0;
     unsigned int mTexWater = 0;
     unsigned int mTexRock  = 0;
