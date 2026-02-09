@@ -22,8 +22,6 @@ const unsigned int SCR_HEIGHT = 1200;
 
 int gFbWidth  = SCR_WIDTH;
 int gFbHeight = SCR_HEIGHT;
-
-// FBO stuff must be accessible in the callback
 unsigned int gFBO = 0;
 unsigned int gColorTex = 0;
 unsigned int gRBO = 0;
@@ -132,11 +130,8 @@ void main() {
     vec3 baseColor = uObjectColor;
 
     if (uUseTexture == 1) {
-        // planar projection on XZ (perfect for ground/water)
         vec2 uv = vWorldPos.xz * uTexScale;
         vec3 texColor = texture(uTex, uv).rgb;
-
-        // tint the texture a bit using uObjectColor (nice for art-directing)
         baseColor = texColor * uObjectColor;
     }
 
@@ -163,43 +158,26 @@ out vec4 FragColor;
 in vec2 vUV;
 
 uniform sampler2D uScene;
-
-// existing
-uniform float uBrightness; // 0 = no change
-uniform float uContrast;   // 1 = no change
-
-// new
-uniform float uExposure;   // 0 = no change (stops)
-uniform float uSaturation; // 1 = no change
-uniform float uVignette;   // 0 = off, 1 = strong
-uniform float uVignetteSoftness; // 0.1..0.8 typical
+uniform float uBrightness; 
+uniform float uContrast;   
+uniform float uExposure;   
+uniform float uSaturation;
+uniform float uVignette;   
+uniform float uVignetteSoftness; 
 uniform sampler2D uBloom;
 uniform float uBloomStrength;
 uniform bool  uBloomEnabled;
 
-
 void main() {
     vec3 color = texture(uScene, vUV).rgb;
-
-    // --- exposure (photographic) ---
-    // exposure in "stops": +1 doubles brightness, -1 halves
     color *= exp2(uExposure);
-
-    // --- brightness ---
     color += vec3(uBrightness);
-
-    // --- contrast (pivot around 0.5) ---
     color = (color - 0.5) * uContrast + 0.5;
-
-    // --- saturation ---
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
     vec3 gray = vec3(luma);
     color = mix(gray, color, uSaturation);
-
-    // --- vignette ---
     vec2 center = vec2(0.5, 0.5);
-    float dist = distance(vUV, center); // 0 at center, ~0.707 at corner
-    // smooth darkening curve
+    float dist = distance(vUV, center); 
     float vig = smoothstep(0.707 - uVignetteSoftness, 0.707, dist);
     color *= (1.0 - uVignette * vig);
 
@@ -235,10 +213,9 @@ in vec2 vUV;
 
 uniform sampler2D uImage;
 uniform bool uHorizontal;
-uniform vec2 uTexelSize; // 1/width, 1/height
+uniform vec2 uTexelSize; 
 
 void main() {
-    // 5-tap gaussian (small + fast)
     float w0 = 0.227027;
     float w1 = 0.1945946;
     float w2 = 0.1216216;
@@ -359,9 +336,6 @@ int main() {
     Scene scene;
     scene.init();
 
-
-
-
     // ----- Compile post-process shader program -----
     Shader postShader(ppVertexShaderSrc, ppFragmentShaderSrc);
     postShader.use();
@@ -374,8 +348,6 @@ int main() {
     blurShader.use();
     blurShader.setInt("uImage", 0);
 
-
-
     //for the birghtness and contrast
     glGenFramebuffers(1, &gFBO);
     glBindFramebuffer(GL_FRAMEBUFFER, gFBO);
@@ -387,12 +359,10 @@ int main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gColorTex, 0);
 
-    // depth + stencil
     glGenRenderbuffers(1, &gRBO);
     glBindRenderbuffer(GL_RENDERBUFFER, gRBO);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, gRBO);
 
-    // allocate initial storage using current framebuffer size
     recreateFramebufferAttachments(SCR_WIDTH, SCR_HEIGHT);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -431,9 +401,6 @@ int main() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 
-
-
-
     float quadVertices[] = {
         // positions   // uvs
         -1.0f, -1.0f,  0.0f, 0.0f,
@@ -459,10 +426,6 @@ int main() {
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
-
-
-
-
     // --- Render Loop ---
     while (!glfwWindowShouldClose(window)) {
 
@@ -476,9 +439,6 @@ int main() {
         glEnable(GL_DEPTH_TEST);
         glClearColor(0.55f, 0.75f, 0.95f, 1.0f); // sky blue
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        // use your lighting shader and draw floor + cubes (your existing code)
-
         lightingShader.use();
 
         // ----- COMMON MATRICES -----
@@ -550,16 +510,8 @@ int main() {
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-        // final blurred result:
         unsigned int blurredBloomTex = pingpongTex[horizontal ? 1 : 0];
 
-
-
-
-
-        // =========================
-        // PASS B: render quad to screen
-        // =========================
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDisable(GL_DEPTH_TEST);
         glClearColor(0,0,0,1);
@@ -591,7 +543,6 @@ int main() {
 
         glBindVertexArray(quadVAO);
         glDrawArrays(GL_TRIANGLES, 0, 6);
-
 
 
         if (debugPrint) {
@@ -645,8 +596,6 @@ void processInput(GLFWwindow *window) {
             GLFW_CURSOR,
             mouseCaptured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL
         );
-
-        // Important: prevent a huge jump when recapturing
         gCamera.resetFirstMouse();
     }
     altPressedLastFrame = altPressed;
@@ -742,7 +691,7 @@ void processInput(GLFWwindow *window) {
     }
     eightPressedLastFrame = eightPressed;
 
-    // Step direction with arrows (single-step per press)
+    // Step direction with arrows
     bool leftPressed = glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS;
     if (leftPressed && !leftPressedLastFrame) {
         lightSnapIndex = (lightSnapIndex - 1 + lightSnapSteps) % lightSnapSteps;
