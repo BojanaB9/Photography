@@ -22,6 +22,8 @@ const unsigned int SCR_HEIGHT = 1200;
 
 int gFbWidth  = SCR_WIDTH;
 int gFbHeight = SCR_HEIGHT;
+
+
 unsigned int gFBO = 0;
 unsigned int gColorTex = 0;
 unsigned int gRBO = 0;
@@ -31,20 +33,20 @@ Camera gCamera(glm::vec3(0,0,3), glm::vec3(0,1,0), -90.0f, 0.0f);
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
-bool lightAnimate = true;      // toggle animation on/off
-float lightOrbitRadius = 2.0f; // orbit radius
-float lightOrbitSpeed  = 1.0f; // radians/sec (speed)
-float lightHeight      = 2.0f; // Y height
-float lightAngle       = 0.0f; // current angle (accumulates)
-float brightness = 0.0f; // [-1..1] typical
-float contrast   = 1.0f; // [0..3] typical
-float exposure = 0.0f;          // stops: [-3..+3] nice range
-float saturation = 1.0f;        // [0..2] (0=gray, 1=normal, 2=extra)
-float vignette = 0.0f;          // [0..1]
-float vignetteSoftness = 0.35f; // [0.1..0.8]
+bool lightAnimate = true;      
+float lightOrbitRadius = 2.0f; 
+float lightOrbitSpeed  = 1.0f; 
+float lightHeight      = 2.0f; 
+float lightAngle       = 0.0f; 
+float brightness = 0.0f; 
+float contrast   = 1.0f; 
+float exposure = 0.0f;          
+float saturation = 1.0f;        
+float vignette = 0.0f;          
+float vignetteSoftness = 0.35f; 
 bool  bloomEnabled = true;
-float bloomThreshold = 1.0f;   // tweak: 0.8..2.0
-float bloomStrength  = 0.8f;   // 0..2
+float bloomThreshold = 0.3f;   
+float bloomStrength  = 1.8f;   
 
 unsigned int gBrightTex = 0;
 unsigned int pingpongFBO[2] = {0,0};
@@ -57,9 +59,9 @@ bool pPressedLastFrame = false;
 bool mouseCaptured = true;
 bool altPressedLastFrame = false;
 
-bool lightSnapMode = true;   // if true: use 8-direction snapping
-int  lightSnapSteps = 8;     // 4 or 8
-int  lightSnapIndex = 0;     // which direction (0..steps-1)
+bool lightSnapMode = true;   
+int  lightSnapSteps = 8;     
+int  lightSnapIndex = 0;     
 bool leftPressedLastFrame = false;
 bool rightPressedLastFrame = false;
 bool tPressedLastFrame = false;
@@ -118,6 +120,25 @@ uniform sampler2D uTex;
 uniform int uUseTexture;
 uniform vec2 uTexScale;
 
+vec3 TriplanarTex(sampler2D tex, vec3 worldPos, vec3 worldNormal, vec2 scale)
+{
+    vec3 n = normalize(worldNormal);
+    vec3 w = abs(n);
+    // sharpen blend a bit so it doesn't look muddy
+    w = pow(w, vec3(4.0));
+    w /= (w.x + w.y + w.z);
+
+    vec2 uvX = worldPos.zy * scale; // projection onto YZ (for X-facing)
+    vec2 uvY = worldPos.xz * scale; // projection onto XZ (for Y-facing)
+    vec2 uvZ = worldPos.xy * scale; // projection onto XY (for Z-facing)
+
+    vec3 x = texture(tex, uvX).rgb;
+    vec3 y = texture(tex, uvY).rgb;
+    vec3 z = texture(tex, uvZ).rgb;
+
+    return x * w.x + y * w.y + z * w.z;
+}
+
 void main() {
     vec3 norm = normalize(Normal);
     vec3 lightDir = normalize(uLightPos - FragPos);
@@ -130,10 +151,10 @@ void main() {
     vec3 baseColor = uObjectColor;
 
     if (uUseTexture == 1) {
-        vec2 uv = vWorldPos.xz * uTexScale;
-        vec3 texColor = texture(uTex, uv).rgb;
-        baseColor = texColor * uObjectColor;
-    }
+    vec3 texColor = TriplanarTex(uTex, vWorldPos, Normal, uTexScale);
+    baseColor = texColor * uObjectColor;
+}
+
 
     vec3 result = (ambient + diffuse) * baseColor;
     FragColor = vec4(result, 1.0);
@@ -158,37 +179,52 @@ out vec4 FragColor;
 in vec2 vUV;
 
 uniform sampler2D uScene;
+
 uniform float uBrightness; 
 uniform float uContrast;   
 uniform float uExposure;   
-uniform float uSaturation;
+uniform float uSaturation; 
 uniform float uVignette;   
 uniform float uVignetteSoftness; 
 uniform sampler2D uBloom;
 uniform float uBloomStrength;
 uniform bool  uBloomEnabled;
 
+
 void main() {
     vec3 color = texture(uScene, vUV).rgb;
+
+    // --- exposure (photographic) ---
+    // exposure in "stops": +1 doubles brightness, -1 halves
     color *= exp2(uExposure);
+
+    // --- brightness ---
     color += vec3(uBrightness);
+
+    // --- contrast (pivot around 0.5) ---
     color = (color - 0.5) * uContrast + 0.5;
+
+    // --- saturation ---
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
     vec3 gray = vec3(luma);
     color = mix(gray, color, uSaturation);
+
+    // --- vignette ---
     vec2 center = vec2(0.5, 0.5);
-    float dist = distance(vUV, center); 
+    float dist = distance(vUV, center); // 0 at center, ~0.707 at corner
+    // smooth darkening curve
     float vig = smoothstep(0.707 - uVignetteSoftness, 0.707, dist);
     color *= (1.0 - uVignette * vig);
+
 
     if (uBloomEnabled) {
     vec3 bloom = texture(uBloom, vUV).rgb;
     color += bloom * uBloomStrength;
     }
-
     FragColor = vec4(color, 1.0);
 }
 )";
+
 
 const char* brightFragSrc = R"(
 #version 330 core
@@ -213,9 +249,10 @@ in vec2 vUV;
 
 uniform sampler2D uImage;
 uniform bool uHorizontal;
-uniform vec2 uTexelSize; 
+uniform vec2 uTexelSize; // 1/width, 1/height
 
 void main() {
+    // 5-tap gaussian (small + fast)
     float w0 = 0.227027;
     float w1 = 0.1945946;
     float w2 = 0.1216216;
@@ -274,7 +311,7 @@ void recreateFramebufferAttachments(int width, int height) {
 
     // Resize color texture
     glBindTexture(GL_TEXTURE_2D, gColorTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, nullptr);
 
     // Resize depth-stencil renderbuffer
     glBindRenderbuffer(GL_RENDERBUFFER, gRBO);
@@ -282,17 +319,21 @@ void recreateFramebufferAttachments(int width, int height) {
 
     if (gBrightTex != 0) {
         glBindTexture(GL_TEXTURE_2D, gBrightTex);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
     }
 
     for (int i = 0; i < 2; i++) {
         if (pingpongTex[i] != 0) {
             glBindTexture(GL_TEXTURE_2D, pingpongTex[i]);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         }
     }
-
-    // Optional: sanity check
+    
     glBindFramebuffer(GL_FRAMEBUFFER, gFBO);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         std::cout << "ERROR: Framebuffer not complete after resize!\n";
@@ -336,6 +377,9 @@ int main() {
     Scene scene;
     scene.init();
 
+
+
+
     // ----- Compile post-process shader program -----
     Shader postShader(ppVertexShaderSrc, ppFragmentShaderSrc);
     postShader.use();
@@ -348,6 +392,8 @@ int main() {
     blurShader.use();
     blurShader.setInt("uImage", 0);
 
+
+
     //for the birghtness and contrast
     glGenFramebuffers(1, &gFBO);
     glBindFramebuffer(GL_FRAMEBUFFER, gFBO);
@@ -359,10 +405,12 @@ int main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gColorTex, 0);
 
+    // depth + stencil
     glGenRenderbuffers(1, &gRBO);
     glBindRenderbuffer(GL_RENDERBUFFER, gRBO);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, gRBO);
 
+    // allocate initial storage using current framebuffer size
     recreateFramebufferAttachments(SCR_WIDTH, SCR_HEIGHT);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -370,26 +418,34 @@ int main() {
     unsigned int brightFBO = 0;
     glGenFramebuffers(1, &brightFBO);
     glBindFramebuffer(GL_FRAMEBUFFER, brightFBO);
+    glViewport(0, 0, gFbWidth, gFbHeight);
 
     glGenTextures(1, &gBrightTex);
     glBindTexture(GL_TEXTURE_2D, gBrightTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, gFbWidth, gFbHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, gFbWidth, gFbHeight, 0, GL_RGB, GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gBrightTex, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
 
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         std::cout << "ERROR: Bright FBO incomplete!\n";
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    GLenum db = GL_COLOR_ATTACHMENT0;
+    glDrawBuffers(1, &db);
 
     glGenFramebuffers(2, pingpongFBO);
     glGenTextures(2, pingpongTex);
 
     for (int i = 0; i < 2; i++) {
         glBindFramebuffer(GL_FRAMEBUFFER, pingpongFBO[i]);
+        GLenum db = GL_COLOR_ATTACHMENT0;
+        glDrawBuffers(1, &db);
         glBindTexture(GL_TEXTURE_2D, pingpongTex[i]);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, gFbWidth, gFbHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, gFbWidth, gFbHeight, 0, GL_RGB, GL_FLOAT, nullptr);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, pingpongTex[i], 0);
@@ -399,6 +455,7 @@ int main() {
         }
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
 
 
     float quadVertices[] = {
@@ -426,6 +483,8 @@ int main() {
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
+
+
     // --- Render Loop ---
     while (!glfwWindowShouldClose(window)) {
 
@@ -439,6 +498,9 @@ int main() {
         glEnable(GL_DEPTH_TEST);
         glClearColor(0.55f, 0.75f, 0.95f, 1.0f); // sky blue
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        // use your lighting shader and draw floor + cubes (your existing code)
+
         lightingShader.use();
 
         // ----- COMMON MATRICES -----
@@ -476,6 +538,7 @@ int main() {
 
 
         glBindFramebuffer(GL_FRAMEBUFFER, brightFBO);
+        glViewport(0, 0, gFbWidth, gFbHeight);
         glDisable(GL_DEPTH_TEST);
         glClear(GL_COLOR_BUFFER_BIT);
 
@@ -510,8 +573,9 @@ int main() {
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+        // final blurred result:
         unsigned int blurredBloomTex = pingpongTex[horizontal ? 1 : 0];
-
+        
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glDisable(GL_DEPTH_TEST);
         glClearColor(0,0,0,1);
@@ -545,6 +609,7 @@ int main() {
         glDrawArrays(GL_TRIANGLES, 0, 6);
 
 
+
         if (debugPrint) {
             static float t = 0.0f;
             t += deltaTime;
@@ -560,6 +625,8 @@ int main() {
                           << " saturation=" << saturation
                           << " vignette=" << vignette
                           << " vignetteSoftness=" << vignetteSoftness
+                         << "thresh hold= " << bloomThreshold
+                            <<"bloom strenght= "<< bloomStrength
                           << "\n";
             }
         }
@@ -596,6 +663,8 @@ void processInput(GLFWwindow *window) {
             GLFW_CURSOR,
             mouseCaptured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL
         );
+
+        // Important: prevent a huge jump when recapturing
         gCamera.resetFirstMouse();
     }
     altPressedLastFrame = altPressed;
@@ -691,7 +760,7 @@ void processInput(GLFWwindow *window) {
     }
     eightPressedLastFrame = eightPressed;
 
-    // Step direction with arrows
+    // Step direction with arrows (single-step per press)
     bool leftPressed = glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS;
     if (leftPressed && !leftPressedLastFrame) {
         lightSnapIndex = (lightSnapIndex - 1 + lightSnapSteps) % lightSnapSteps;
